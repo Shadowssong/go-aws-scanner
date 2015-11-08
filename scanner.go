@@ -5,14 +5,17 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/lair-framework/go-nmap"
 	"os/exec"
 )
 
 type Instance struct {
-	name           string
-	ip             string
-	dns            string
-	securityGroups []*ec2.GroupIdentifier
+	name             string
+	ip               string
+	dns              string
+	securityGroups   []*ec2.GroupIdentifier
+	rawXmlScanResult string
+	//parsedXmlScanResult NmapRun
 }
 
 func getName(tags []*ec2.Tag) string {
@@ -47,8 +50,8 @@ func parseInstanceInfo(inst *ec2.Instance) Instance {
 	return instanceInfo
 }
 
-func scanHost(host Instance) {
-	cmd := exec.Command("nmap", "-Pn", "-n", "-F", host.ip)
+func scanHost(host *Instance) {
+	cmd := exec.Command("nmap", "-Pn", "-n", "-F", "--host-timeout", "300", "--open", "-T4", host.ip, "-oX", "-")
 	stdout, err := cmd.Output()
 
 	if err != nil {
@@ -56,8 +59,7 @@ func scanHost(host Instance) {
 		return
 	}
 
-	print(string(stdout))
-	fmt.Println("\n-----------------------")
+	host.rawXmlScanResult = string(stdout)
 }
 
 func main() {
@@ -74,9 +76,22 @@ func main() {
 	for idx := range resp.Reservations {
 		for _, inst := range resp.Reservations[idx].Instances {
 			// for each instance lets parse out the info we want
-			instanceInfo := parseInstanceInfo(inst)
-			fmt.Println("Processing: ", instanceInfo.name)
-			scanHost(instanceInfo)
+			instance := parseInstanceInfo(inst)
+			fmt.Println("Processing: ", instance.name)
+			scanHost(&instance)
+			//fmt.Println(instance.RawXmlScanResult)
+			//instance.parsedXmlScanResult = nmap.Parse([]byte(instance.xmlScanResult))
+			parsedScan, err := nmap.Parse([]byte(instance.rawXmlScanResult))
+			if err != nil {
+				fmt.Println(err.Error())
+				return
+			}
+			fmt.Println("Open ports on host: ")
+			for _, host := range parsedScan.Hosts {
+				for _, ports := range host.Ports {
+					fmt.Println(ports)
+				}
+			}
 		}
 	}
 }
