@@ -10,12 +10,12 @@ import (
 )
 
 type Instance struct {
-	name             string
-	ip               string
-	dns              string
-	securityGroups   []*ec2.GroupIdentifier
-	rawXmlScanResult string
-	//parsedXmlScanResult NmapRun
+	name                string
+	ip                  string
+	dns                 string
+	securityGroups      []*ec2.GroupIdentifier
+	rawXmlScanResult    string
+	parsedXmlScanResult *nmap.NmapRun
 }
 
 func getName(tags []*ec2.Tag) string {
@@ -62,6 +62,21 @@ func scanHost(host *Instance) {
 	host.rawXmlScanResult = string(stdout)
 }
 
+func printOpenPorts(instance *Instance) {
+	if len(instance.parsedXmlScanResult.Hosts) > 0 {
+		fmt.Println("Open ports on host: ")
+		for _, host := range instance.parsedXmlScanResult.Hosts {
+			for _, ports := range host.Ports {
+				//fmt.Println(ports)
+				fmt.Println("Protocol: ", ports.Protocol, " port: ", ports.PortId, " type: ", ports.Service.Name)
+				//fmt.Printf("%+v\n", ports)
+			}
+		}
+	} else {
+		fmt.Println("No open ports found")
+	}
+}
+
 func main() {
 	svc := ec2.New(session.New(), &aws.Config{Region: aws.String("us-east-1")})
 
@@ -77,21 +92,14 @@ func main() {
 		for _, inst := range resp.Reservations[idx].Instances {
 			// for each instance lets parse out the info we want
 			instance := parseInstanceInfo(inst)
-			fmt.Println("Processing: ", instance.name)
+			fmt.Println("Processing: ", instance.name, " (", instance.ip, ")")
 			scanHost(&instance)
-			//fmt.Println(instance.RawXmlScanResult)
-			//instance.parsedXmlScanResult = nmap.Parse([]byte(instance.xmlScanResult))
-			parsedScan, err := nmap.Parse([]byte(instance.rawXmlScanResult))
+			instance.parsedXmlScanResult, err = nmap.Parse([]byte(instance.rawXmlScanResult))
 			if err != nil {
 				fmt.Println(err.Error())
 				return
 			}
-			fmt.Println("Open ports on host: ")
-			for _, host := range parsedScan.Hosts {
-				for _, ports := range host.Ports {
-					fmt.Println(ports)
-				}
-			}
+			printOpenPorts(&instance)
 		}
 	}
 }
